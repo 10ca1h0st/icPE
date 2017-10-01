@@ -16,6 +16,9 @@ filename = sys.argv[1]
 所以对于这种变量，定义两种形式，一种存放rva，另一种存放raw
 例如：offset_IMPORT_DESCRIPTOR和offset_IMPORT_DESCRIPTOR_raw
 '''
+
+names = globals()
+
 #定义一些PE头中的重要字段
 offset_NT = 0
 #NT Header
@@ -73,7 +76,7 @@ FirstThunk = 0
 FirstThunk_raw = 0
 end_IMPORT_DESCRIPTOR = b'\x00'*20
 
-library_name_IAT = ''
+dll_names_IAT = []
 
 
 
@@ -142,7 +145,8 @@ def splitToSections():
 def analysis_IAT():
     global offset_DataDirectory,NumberOfRvaAndSizes,DataDirectory,\
     offset_IMPORT_DESCRIPTOR_raw,OriginalFirstThunk_raw,Name_in_IMPORT_DESCRIPTOR_raw,FirstThunk_raw,\
-    offset_IMPORT_DESCRIPTOR,OriginalFirstThunk,Name_in_IMPORT_DESCRIPTOR,FirstThunk,end_IMPORT_DESCRIPTOR
+    offset_IMPORT_DESCRIPTOR,OriginalFirstThunk,Name_in_IMPORT_DESCRIPTOR,FirstThunk,end_IMPORT_DESCRIPTOR,\
+    dll_names_IAT,names
     length = byte2int(NumberOfRvaAndSizes)
     DataDirectory = [{} for i in range(length)]
     with open(filename,'rb') as fp:
@@ -161,7 +165,7 @@ def analysis_IAT():
         FirstThunk = byte2int(little_endian(s[offset_IMPORT_DESCRIPTOR_raw+16:offset_IMPORT_DESCRIPTOR_raw+20]))
         FirstThunk_raw = rva2raw(FirstThunk)
         fp.seek(offset_IMPORT_DESCRIPTOR_raw+20)
-        names = globals()
+
         for i in count(2):
             struct = fp.read(20)
             if struct == end_IMPORT_DESCRIPTOR:
@@ -169,23 +173,31 @@ def analysis_IAT():
             names['OriginalFirstThunk_%s'%i] = byte2int(little_endian(struct[:4]))
             names['OriginalFirstThunk_raw_%s'%i] = rva2raw(names['OriginalFirstThunk_%s'%i])
             names['Name_in_IMPORT_DESCRIPTOR_%s'%i] = byte2int(little_endian(struct[12:16]))
-            names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i] = rva2raw(names['OriginalFirstThunk_%s'%i])
+            names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i] = rva2raw(names['Name_in_IMPORT_DESCRIPTOR_%s'%i])
             names['FirstThunk_%s'%i] = byte2int(little_endian(struct[16:]))
-            names['FirstThunk_raw_%s'%i] = rva2raw(names['OriginalFirstThunk_%s'%i])
-        
-        print('one:',hex(Name_in_IMPORT_DESCRIPTOR))
-        print('two:',hex(Name_in_IMPORT_DESCRIPTOR_2))
-        print('three:',hex(Name_in_IMPORT_DESCRIPTOR_3))
+            names['FirstThunk_raw_%s'%i] = rva2raw(names['FirstThunk_%s'%i])
 
+        #print('one:',hex(Name_in_IMPORT_DESCRIPTOR))
+        #print('two:',hex(Name_in_IMPORT_DESCRIPTOR_2))
+        #print('three:',hex(Name_in_IMPORT_DESCRIPTOR_3))
+        #print(filename,' use %s dlls' %i)
 
+        dll_names_IAT = ['' for j in range(i-1)]
 
-        i = 0
-        for j in iter(s[Name_in_IMPORT_DESCRIPTOR_raw:]):
-            if j == 0:
-                break
-            i = i+1
-
-        #print('library name length:',i)
+        for i in range(1,len(dll_names_IAT)+1):
+            k = 0
+            if i == 1:
+                for j in iter(s[Name_in_IMPORT_DESCRIPTOR_raw:]):
+                    if j == 0:
+                        break
+                    k = k+1
+                dll_names_IAT[i-1] = str(s[Name_in_IMPORT_DESCRIPTOR_raw:Name_in_IMPORT_DESCRIPTOR_raw+k],'utf-8')
+            else:
+                for j in iter(s[names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i]:]):
+                    if j == 0:
+                        break
+                    k = k+1
+                dll_names_IAT[i-1] = str(s[names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i]:names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i]+k],'utf-8')
 
 
 def analysis_EAT():
@@ -220,9 +232,4 @@ if __name__ == '__main__':
     '''
     #print(DataDirectory)
     print('address of IMAGE_IMPORT_DESCRIPTOR(raw):',hex(offset_IMPORT_DESCRIPTOR_raw))
-    print('OriginalFirstThunk:',hex(OriginalFirstThunk))
-    print('OriginalFirstThunk_raw:',hex(OriginalFirstThunk_raw))
-    print('Name_in_IMPORT_DESCRIPTOR:',hex(Name_in_IMPORT_DESCRIPTOR))
-    print('Name_in_IMPORT_DESCRIPTOR_raw:',hex(Name_in_IMPORT_DESCRIPTOR_raw))
-    print('FirstThunk:',hex(FirstThunk))
-    print('FirstThunk_raw:',hex(FirstThunk_raw))
+    print('dll names',dll_names_IAT)
