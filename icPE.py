@@ -78,6 +78,8 @@ end_IMPORT_DESCRIPTOR = b'\x00'*20
 
 dll_names_IAT = []
 
+dll_function_name_IAT = {}
+
 
 
 
@@ -146,7 +148,7 @@ def analysis_IAT():
     global offset_DataDirectory,NumberOfRvaAndSizes,DataDirectory,\
     offset_IMPORT_DESCRIPTOR_raw,OriginalFirstThunk_raw,Name_in_IMPORT_DESCRIPTOR_raw,FirstThunk_raw,\
     offset_IMPORT_DESCRIPTOR,OriginalFirstThunk,Name_in_IMPORT_DESCRIPTOR,FirstThunk,end_IMPORT_DESCRIPTOR,\
-    dll_names_IAT,names
+    dll_names_IAT,names,dll_function_name_IAT
     length = byte2int(NumberOfRvaAndSizes)
     DataDirectory = [{} for i in range(length)]
     with open(filename,'rb') as fp:
@@ -166,6 +168,15 @@ def analysis_IAT():
         FirstThunk_raw = rva2raw(FirstThunk)
         fp.seek(offset_IMPORT_DESCRIPTOR_raw+20)
 
+        '''
+        为了统一变量名称
+        '''
+        names['Name_in_IMPORT_DESCRIPTOR_1'] = Name_in_IMPORT_DESCRIPTOR
+        names['Name_in_IMPORT_DESCRIPTOR_raw_1'] = Name_in_IMPORT_DESCRIPTOR_raw
+        names['OriginalFirstThunk_1'] = OriginalFirstThunk
+        names['OriginalFirstThunk_raw_1'] = OriginalFirstThunk_raw
+        names['FirstThunk_1'] = FirstThunk
+        names['FirstThunk_raw_1'] = FirstThunk_raw
         for i in count(2):
             struct = fp.read(20)
             if struct == end_IMPORT_DESCRIPTOR:
@@ -182,22 +193,45 @@ def analysis_IAT():
         #print('three:',hex(Name_in_IMPORT_DESCRIPTOR_3))
         #print(filename,' use %s dlls' %i)
 
+        '''
+        开始统计导入的dll文件名
+        '''
         dll_names_IAT = ['' for j in range(i-1)]
 
         for i in range(1,len(dll_names_IAT)+1):
             k = 0
-            if i == 1:
-                for j in iter(s[Name_in_IMPORT_DESCRIPTOR_raw:]):
-                    if j == 0:
+            for j in iter(s[names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i]:]):
+                if j == 0:
+                    break
+                k = k+1
+            dll_names_IAT[i-1] = str(s[names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i]:names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i]+k],'utf-8')
+
+        '''
+        开始找出每一的导入的dll文件里面的函数
+        '''
+
+        for i in range(len(dll_names_IAT)):
+            address = []
+            dll_function_name_IAT[dll_names_IAT[i]] = []
+            fp.seek(names['OriginalFirstThunk_raw_%s'%(i+1)])
+            while True:
+                struct = fp.read(4)
+                if struct == b'\x00\x00\x00\x00':
+                    break
+                address.append(rva2raw(little_endian(struct)))
+            for j in range(len(address)):
+                fp.seek(address[j]+2)
+                k = 0
+                while True:
+                    struct = fp.read(1)
+                    if struct == b'\x00':
                         break
                     k = k+1
-                dll_names_IAT[i-1] = str(s[Name_in_IMPORT_DESCRIPTOR_raw:Name_in_IMPORT_DESCRIPTOR_raw+k],'utf-8')
-            else:
-                for j in iter(s[names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i]:]):
-                    if j == 0:
-                        break
-                    k = k+1
-                dll_names_IAT[i-1] = str(s[names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i]:names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i]+k],'utf-8')
+                dll_function_name_IAT[dll_names_IAT[i]].append(str(s[address[j]+2:address[j]+2+k],'utf-8'))
+
+
+                
+
 
 
 def analysis_EAT():
@@ -233,3 +267,6 @@ if __name__ == '__main__':
     #print(DataDirectory)
     print('address of IMAGE_IMPORT_DESCRIPTOR(raw):',hex(offset_IMPORT_DESCRIPTOR_raw))
     print('dll names',dll_names_IAT)
+    for k,v in dll_function_name_IAT.items():
+        print(k)
+        print(v)
