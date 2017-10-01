@@ -5,11 +5,16 @@
 '''
 
 import sys
+from itertools import count
 
 filename = sys.argv[1]
 
 '''
 除了代表地址的字段要用10进制保存，其他都用bytes保存，即b'\x00'这种形式
+因为文件在磁盘时的PE头的地址与在内存时一样，所以PE头中的所有offset类变量不用进行rva2raw
+但是，因为文件在磁盘时的用NULL字节填充的长度与在内存时不一样，所以，PE体中的offset类变量需要进行rva2raw
+所以对于这种变量，定义两种形式，一种存放rva，另一种存放raw
+例如：offset_IMPORT_DESCRIPTOR和offset_IMPORT_DESCRIPTOR_raw
 '''
 #定义一些PE头中的重要字段
 offset_NT = 0
@@ -30,7 +35,8 @@ SizeOfImage = b'\x00\x00\x00\x00'
 SizeOfHeaders = b'\x00\x00\x00\x00'
 Subsystem = b'\x00\x00'
 NumberOfRvaAndSizes = b'\x00\x00\x00\x00'
-DataDirectory = [{'rva':0,'size':b'\x00\x00\x00\x00'}]
+offset_DataDirectory = 0
+DataDirectory = []
 #IMAGE_SECTION_HEADER
 offset_SECTION_HEADER = 0
     #第一个节区头
@@ -56,6 +62,19 @@ VirtualAddress_three = 0
 SizeOfRawData_three = b'\x00\x00\x00\x00'
 PointerToRawData_three = 0
 Characteristics_three_in_SECTION_HEADER = b'\x00\x00\x00\x00'
+#IMAGE_IMPORT_DESCRIPTOR
+offset_IMPORT_DESCRIPTOR = 0
+offset_IMPORT_DESCRIPTOR_raw = 0
+OriginalFirstThunk = 0
+OriginalFirstThunk_raw = 0
+Name_in_IMPORT_DESCRIPTOR = 0
+Name_in_IMPORT_DESCRIPTOR_raw = 0
+FirstThunk = 0
+FirstThunk_raw = 0
+end_IMPORT_DESCRIPTOR = b'\x00'*20
+
+library_name_IAT = ''
+
 
 
 
@@ -83,7 +102,7 @@ def rva2raw(address):
     return 0
 
 def splitToSections():
-    global offset_NT,offset_OPTIONAL_HEADER,NumberOfRvaAndSizes,offset_SECTION_HEADER,\
+    global offset_NT,offset_OPTIONAL_HEADER,NumberOfRvaAndSizes,offset_SECTION_HEADER,offset_DataDirectory,\
     offset_SECTION_HEADER_two,offset_SECTION_HEADER_three,\
     Name_one,Name_two,Name_three,VirtualAddress_one,VirtualAddress_two,VirtualAddress_three,\
     PointerToRawData_one,PointerToRawData_two,PointerToRawData_three
@@ -98,6 +117,8 @@ def splitToSections():
         offset_OPTIONAL_HEADER = offset_NT+20+4
         #print(s[offset_OPTIONAL_HEADER:offset_OPTIONAL_HEADER+4])
         NumberOfRvaAndSizes = little_endian(s[offset_OPTIONAL_HEADER+92:offset_OPTIONAL_HEADER+96])
+        offset_DataDirectory = offset_OPTIONAL_HEADER+96
+        #print('address of datadirectory:',hex(offset_DataDirectory))
         #print(NumberOfRvaAndSizes)
         #print(byte2int(NumberOfRvaAndSizes))
         #print(byte2int(b'\x11\x12\x13'))
@@ -119,10 +140,56 @@ def splitToSections():
 
 
 def analysis_IAT():
-    pass
+    global offset_DataDirectory,NumberOfRvaAndSizes,DataDirectory,\
+    offset_IMPORT_DESCRIPTOR_raw,OriginalFirstThunk_raw,Name_in_IMPORT_DESCRIPTOR_raw,FirstThunk_raw,\
+    offset_IMPORT_DESCRIPTOR,OriginalFirstThunk,Name_in_IMPORT_DESCRIPTOR,FirstThunk,end_IMPORT_DESCRIPTOR
+    length = byte2int(NumberOfRvaAndSizes)
+    DataDirectory = [{} for i in range(length)]
+    with open(filename,'rb') as fp:
+        s = fp.read()
+        for i in range(length):
+            DataDirectory[i]['rva'] = byte2int(little_endian(s[offset_DataDirectory+i*8:offset_DataDirectory+(i+1)*8][:4]))
+            DataDirectory[i]['size'] = little_endian(s[offset_DataDirectory+i*8:offset_DataDirectory+(i+1)*8][4:])
+            #print(hex(DataDirectory[i]['rva']))
+            #print(DataDirectory[i]['size'])
+        offset_IMPORT_DESCRIPTOR = DataDirectory[1]['rva']
+        offset_IMPORT_DESCRIPTOR_raw = rva2raw(offset_IMPORT_DESCRIPTOR)
+        OriginalFirstThunk = byte2int(little_endian(s[offset_IMPORT_DESCRIPTOR_raw:offset_IMPORT_DESCRIPTOR_raw+4]))
+        OriginalFirstThunk_raw = rva2raw(OriginalFirstThunk)
+        Name_in_IMPORT_DESCRIPTOR = byte2int(little_endian(s[offset_IMPORT_DESCRIPTOR_raw+12:offset_IMPORT_DESCRIPTOR_raw+16]))
+        Name_in_IMPORT_DESCRIPTOR_raw = rva2raw(Name_in_IMPORT_DESCRIPTOR)
+        FirstThunk = byte2int(little_endian(s[offset_IMPORT_DESCRIPTOR_raw+16:offset_IMPORT_DESCRIPTOR_raw+20]))
+        FirstThunk_raw = rva2raw(FirstThunk)
+        fp.seek(offset_IMPORT_DESCRIPTOR_raw+20)
+        names = globals()
+        for i in count(2):
+            struct = fp.read(20)
+            if struct == end_IMPORT_DESCRIPTOR:
+                break
+            names['OriginalFirstThunk_%s'%i] = byte2int(little_endian(struct[:4]))
+            names['OriginalFirstThunk_raw_%s'%i] = rva2raw(names['OriginalFirstThunk_%s'%i])
+            names['Name_in_IMPORT_DESCRIPTOR_%s'%i] = byte2int(little_endian(struct[12:16]))
+            names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i] = rva2raw(names['OriginalFirstThunk_%s'%i])
+            names['FirstThunk_%s'%i] = byte2int(little_endian(struct[16:]))
+            names['FirstThunk_raw_%s'%i] = rva2raw(names['OriginalFirstThunk_%s'%i])
+        
+        print('one:',hex(Name_in_IMPORT_DESCRIPTOR))
+        print('two:',hex(Name_in_IMPORT_DESCRIPTOR_2))
+        print('three:',hex(Name_in_IMPORT_DESCRIPTOR_3))
+
+
+
+        i = 0
+        for j in iter(s[Name_in_IMPORT_DESCRIPTOR_raw:]):
+            if j == 0:
+                break
+            i = i+1
+
+        #print('library name length:',i)
+
 
 def analysis_EAT():
-    pass     
+    pass   
         
 
 
@@ -132,6 +199,8 @@ def analysis_EAT():
 
 def main():
     splitToSections()
+    analysis_IAT()
+    analysis_EAT()
 
 if __name__ == '__main__':
     main()
@@ -149,3 +218,11 @@ if __name__ == '__main__':
     print('rva:0x5000','raw:',hex(rva2raw(b'\x50\x00')))
     print('rva:0x13314','raw:',hex(rva2raw(b'\x01\x33\x14')))
     '''
+    #print(DataDirectory)
+    print('address of IMAGE_IMPORT_DESCRIPTOR(raw):',hex(offset_IMPORT_DESCRIPTOR_raw))
+    print('OriginalFirstThunk:',hex(OriginalFirstThunk))
+    print('OriginalFirstThunk_raw:',hex(OriginalFirstThunk_raw))
+    print('Name_in_IMPORT_DESCRIPTOR:',hex(Name_in_IMPORT_DESCRIPTOR))
+    print('Name_in_IMPORT_DESCRIPTOR_raw:',hex(Name_in_IMPORT_DESCRIPTOR_raw))
+    print('FirstThunk:',hex(FirstThunk))
+    print('FirstThunk_raw:',hex(FirstThunk_raw))
