@@ -74,11 +74,13 @@ Name_in_IMPORT_DESCRIPTOR = 0
 Name_in_IMPORT_DESCRIPTOR_raw = 0
 FirstThunk = 0
 FirstThunk_raw = 0
-end_IMPORT_DESCRIPTOR = b'\x00'*20
 
 dll_names_IAT = []
 
 dll_function_name_IAT = {}
+
+IAT = {}
+#例如 {'kernel32.dll':['lstrcmpiW':b'\x01\x23\x45\x67']}
 
 
 
@@ -98,9 +100,9 @@ def rva2raw(address):
     PointerToRawData_one,PointerToRawData_two,PointerToRawData_three
     if isinstance(address,bytes):
         address = byte2int(address)
-    if address > VirtualAddress_one and address < VirtualAddress_two:
+    if address >= VirtualAddress_one and address < VirtualAddress_two:
         return address-VirtualAddress_one+PointerToRawData_one
-    elif address > VirtualAddress_two and address < VirtualAddress_three:
+    elif address >= VirtualAddress_two and address < VirtualAddress_three:
         return address-VirtualAddress_two+PointerToRawData_two
     else:
         return address-VirtualAddress_three+PointerToRawData_three
@@ -147,8 +149,8 @@ def splitToSections():
 def analysis_IAT():
     global offset_DataDirectory,NumberOfRvaAndSizes,DataDirectory,\
     offset_IMPORT_DESCRIPTOR_raw,OriginalFirstThunk_raw,Name_in_IMPORT_DESCRIPTOR_raw,FirstThunk_raw,\
-    offset_IMPORT_DESCRIPTOR,OriginalFirstThunk,Name_in_IMPORT_DESCRIPTOR,FirstThunk,end_IMPORT_DESCRIPTOR,\
-    dll_names_IAT,names,dll_function_name_IAT
+    offset_IMPORT_DESCRIPTOR,OriginalFirstThunk,Name_in_IMPORT_DESCRIPTOR,FirstThunk,\
+    dll_names_IAT,names,dll_function_name_IAT,IAT
     length = byte2int(NumberOfRvaAndSizes)
     DataDirectory = [{} for i in range(length)]
     with open(filename,'rb') as fp:
@@ -166,7 +168,6 @@ def analysis_IAT():
         Name_in_IMPORT_DESCRIPTOR_raw = rva2raw(Name_in_IMPORT_DESCRIPTOR)
         FirstThunk = byte2int(little_endian(s[offset_IMPORT_DESCRIPTOR_raw+16:offset_IMPORT_DESCRIPTOR_raw+20]))
         FirstThunk_raw = rva2raw(FirstThunk)
-        fp.seek(offset_IMPORT_DESCRIPTOR_raw+20)
 
         '''
         为了统一变量名称
@@ -177,9 +178,11 @@ def analysis_IAT():
         names['OriginalFirstThunk_raw_1'] = OriginalFirstThunk_raw
         names['FirstThunk_1'] = FirstThunk
         names['FirstThunk_raw_1'] = FirstThunk_raw
+
+        fp.seek(offset_IMPORT_DESCRIPTOR_raw+20)
         for i in count(2):
             struct = fp.read(20)
-            if struct == end_IMPORT_DESCRIPTOR:
+            if struct == b'\x00'*20:
                 break
             names['OriginalFirstThunk_%s'%i] = byte2int(little_endian(struct[:4]))
             names['OriginalFirstThunk_raw_%s'%i] = rva2raw(names['OriginalFirstThunk_%s'%i])
@@ -216,7 +219,7 @@ def analysis_IAT():
             fp.seek(names['OriginalFirstThunk_raw_%s'%(i+1)])
             while True:
                 struct = fp.read(4)
-                if struct == b'\x00\x00\x00\x00':
+                if struct == b'\x00'*4:
                     break
                 address.append(rva2raw(little_endian(struct)))
             for j in range(len(address)):
@@ -228,7 +231,27 @@ def analysis_IAT():
                         break
                     k = k+1
                 dll_function_name_IAT[dll_names_IAT[i]].append(str(s[address[j]+2:address[j]+2+k],'utf-8'))
-
+        
+        '''
+        开始统计IAT
+        '''
+        for i in range(1,len(dll_names_IAT)+1):
+            '''
+            print('it is ',i)
+            print(hex(names['FirstThunk_raw_%s'%i]))
+            print(hex(names['Name_in_IMPORT_DESCRIPTOR_raw_%s'%i]))
+            print(hex(names['FirstThunk_%s'%i]))
+            '''
+            fp.seek(names['FirstThunk_raw_%s'%i])
+            length = len(dll_function_name_IAT[dll_names_IAT[i-1]])
+            name = dll_names_IAT[i-1]
+            dll_struct = {name:\
+                    [{dll_function_name_IAT[name][j]:b'\x00'*4} \
+                            for j in range(len(dll_function_name_IAT[name]))]}
+            for j in range(length):
+                address = little_endian(fp.read(4))
+                dll_struct[name][j][dll_function_name_IAT[name][j]] = address
+            IAT[name] = dll_struct[name]
 
                 
 
@@ -250,6 +273,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+    '''
     print('address of NT',hex(offset_NT))
     print('address of IMAGE_OPTIONAL_HEADER',hex(offset_OPTIONAL_HEADER))
     print('address of Section Header',hex(offset_SECTION_HEADER))
@@ -259,14 +283,17 @@ if __name__ == '__main__':
     print('section name:',Name_two,'section rva:',hex(VirtualAddress_two),'section raw:',hex(PointerToRawData_two))
     print('section three')
     print('section name:',Name_three,'section rva:',hex(VirtualAddress_three),'section raw:',hex(PointerToRawData_three))
-    '''
-    print('test rva2raw:')
-    print('rva:0x5000','raw:',hex(rva2raw(b'\x50\x00')))
-    print('rva:0x13314','raw:',hex(rva2raw(b'\x01\x33\x14')))
-    '''
+    
+    #print('test rva2raw:')
+    #print('rva:0x5000','raw:',hex(rva2raw(b'\x50\x00')))
+    #print('rva:0x13314','raw:',hex(rva2raw(b'\x01\x33\x14')))
     #print(DataDirectory)
+
     print('address of IMAGE_IMPORT_DESCRIPTOR(raw):',hex(offset_IMPORT_DESCRIPTOR_raw))
     print('dll names',dll_names_IAT)
     for k,v in dll_function_name_IAT.items():
         print(k)
         print(v)
+    '''
+    print(IAT.keys())
+    print(IAT['comdlg32.dll'])
