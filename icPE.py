@@ -41,7 +41,7 @@ NumberOfRvaAndSizes = b'\x00\x00\x00\x00'
 offset_DataDirectory = 0
 DataDirectory = []
 #IMAGE_SECTION_HEADER
-offset_SECTION_HEADER = 0
+offset_SECTION_HEADER_one = 0
     #第一个节区头
 Name_one = b'\x00\x00\x00\x00\x00\x00\x00\x00'
 VirtualSize_one = b'\x00\x00\x00\x00'
@@ -109,7 +109,7 @@ def rva2raw(address):
     return 0
 
 def splitToSections():
-    global offset_NT,offset_OPTIONAL_HEADER,NumberOfRvaAndSizes,offset_SECTION_HEADER,offset_DataDirectory,\
+    global offset_NT,offset_OPTIONAL_HEADER,NumberOfRvaAndSizes,offset_SECTION_HEADER_one,offset_DataDirectory,\
     offset_SECTION_HEADER_two,offset_SECTION_HEADER_three,\
     Name_one,Name_two,Name_three,VirtualAddress_one,VirtualAddress_two,VirtualAddress_three,\
     PointerToRawData_one,PointerToRawData_two,PointerToRawData_three
@@ -129,11 +129,11 @@ def splitToSections():
         #print(NumberOfRvaAndSizes)
         #print(byte2int(NumberOfRvaAndSizes))
         #print(byte2int(b'\x11\x12\x13'))
-        offset_SECTION_HEADER = offset_OPTIONAL_HEADER+96+byte2int(NumberOfRvaAndSizes)*8
-        offset_SECTION_HEADER_two = offset_SECTION_HEADER+40
+        offset_SECTION_HEADER_one = offset_OPTIONAL_HEADER+96+byte2int(NumberOfRvaAndSizes)*8
+        offset_SECTION_HEADER_two = offset_SECTION_HEADER_one+40
         offset_SECTION_HEADER_three = offset_SECTION_HEADER_two+40
-        Name_one = s[offset_SECTION_HEADER:offset_SECTION_HEADER+8]
-        fp.seek(offset_SECTION_HEADER+8+4)
+        Name_one = s[offset_SECTION_HEADER_one:offset_SECTION_HEADER_one+8]
+        fp.seek(offset_SECTION_HEADER_one+8+4)
         VirtualAddress_one = byte2int(little_endian(fp.read(4)))
         PointerToRawData_one = byte2int(little_endian(fp.read(8)[4:]))
         Name_two = s[offset_SECTION_HEADER_two:offset_SECTION_HEADER_two+8]
@@ -259,9 +259,45 @@ def analysis_IAT():
 
 def analysis_EAT():
     pass   
+
+
+'''
+用来统计一些零碎的字段
+'''       
+def info():
+    global Machine,NumberOfSections,SizeOfOptionalHeader,Characteristics,offset_OPTIONAL_HEADER,\
+    Magic,AddressOfEntryPoint,IMageBase,SectionAlignment,FileAlignment,SizeOfImage,SizeOfHeaders,\
+    Subsystem,offset_SECTION_HEADER_one,offset_SECTION_HEADER_two,offset_SECTION_HEADER_three,\
+    VirtualSize_one,VirtualSize_two,VirtualSize_three,SizeOfRawData_one,SizeOfRawData_two,SizeOfRawData_three,\
+    Characteristics_one_in_SECTION_HEADER,Characteristics_two_in_SECTION_HEADER,Characteristics_three_in_SECTION_HEADER
+    with open(filename,'rb') as fp:
+        s = fp.read()
         
+        Machine = little_endian(s[offset_NT+4:offset_NT+6])
+        NumberOfSections = little_endian(s[offset_NT+6:offset_NT+8])
+        SizeOfOptionalHeader = little_endian(s[offset_NT+20:offset_NT+22])
+        Characteristics = little_endian(s[offset_NT+22:offset_NT+24])
 
+        Magic = little_endian(s[offset_OPTIONAL_HEADER:offset_OPTIONAL_HEADER+2])
+        AddressOfEntryPoint = little_endian(s[offset_OPTIONAL_HEADER+16:offset_OPTIONAL_HEADER+20])
+        IMageBase = little_endian(s[offset_OPTIONAL_HEADER+28:offset_OPTIONAL_HEADER+32])
+        SectionAlignment = little_endian(s[offset_OPTIONAL_HEADER+32:offset_OPTIONAL_HEADER+36])
+        FileAlignment = little_endian(s[offset_OPTIONAL_HEADER+36:offset_OPTIONAL_HEADER+40])
+        SizeOfImage = little_endian(s[offset_OPTIONAL_HEADER+56:offset_OPTIONAL_HEADER+60])
+        SizeOfHeaders = little_endian(s[offset_OPTIONAL_HEADER+60:offset_OPTIONAL_HEADER+64])
+        Subsystem = little_endian(s[offset_OPTIONAL_HEADER+68:offset_OPTIONAL_HEADER+70])
 
+        VirtualSize_one = little_endian(s[offset_SECTION_HEADER_one+8:offset_SECTION_HEADER_one+12])
+        SizeOfRawData_one = little_endian(s[offset_SECTION_HEADER_one+16:offset_SECTION_HEADER_one+20])
+        Characteristics_one_in_SECTION_HEADER = little_endian(s[offset_SECTION_HEADER_one+36:offset_SECTION_HEADER_one+40])
+        
+        VirtualSize_two = little_endian(s[offset_SECTION_HEADER_two+8:offset_SECTION_HEADER_two+12])
+        SizeOfRawData_two = little_endian(s[offset_SECTION_HEADER_two+16:offset_SECTION_HEADER_two+20])
+        Characteristics_two_in_SECTION_HEADER = little_endian(s[offset_SECTION_HEADER_two+36:offset_SECTION_HEADER_two+40])
+        
+        VirtualSize_three = little_endian(s[offset_SECTION_HEADER_three+8:offset_SECTION_HEADER_three+12])
+        SizeOfRawData_three = little_endian(s[offset_SECTION_HEADER_three+16:offset_SECTION_HEADER_three+20])
+        Characteristics_three_in_SECTION_HEADER = little_endian(s[offset_SECTION_HEADER_three+36:offset_SECTION_HEADER_three+40])
 
 
 
@@ -270,30 +306,7 @@ def main():
     splitToSections()
     analysis_IAT()
     analysis_EAT()
+    info()
 
 if __name__ == '__main__':
     main()
-    '''
-    print('address of NT',hex(offset_NT))
-    print('address of IMAGE_OPTIONAL_HEADER',hex(offset_OPTIONAL_HEADER))
-    print('address of Section Header',hex(offset_SECTION_HEADER))
-    print('section one:')
-    print('section name:',Name_one,'section rva:',hex(VirtualAddress_one),'section raw:',hex(PointerToRawData_one))
-    print('section two')
-    print('section name:',Name_two,'section rva:',hex(VirtualAddress_two),'section raw:',hex(PointerToRawData_two))
-    print('section three')
-    print('section name:',Name_three,'section rva:',hex(VirtualAddress_three),'section raw:',hex(PointerToRawData_three))
-    
-    #print('test rva2raw:')
-    #print('rva:0x5000','raw:',hex(rva2raw(b'\x50\x00')))
-    #print('rva:0x13314','raw:',hex(rva2raw(b'\x01\x33\x14')))
-    #print(DataDirectory)
-
-    print('address of IMAGE_IMPORT_DESCRIPTOR(raw):',hex(offset_IMPORT_DESCRIPTOR_raw))
-    print('dll names',dll_names_IAT)
-    for k,v in dll_function_name_IAT.items():
-        print(k)
-        print(v)
-    '''
-    print(IAT.keys())
-    print(IAT['comdlg32.dll'])
