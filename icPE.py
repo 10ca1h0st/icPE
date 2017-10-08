@@ -272,7 +272,7 @@ def info():
     Characteristics_one_in_SECTION_HEADER,Characteristics_two_in_SECTION_HEADER,Characteristics_three_in_SECTION_HEADER
     with open(filename,'rb') as fp:
         s = fp.read()
-        
+
         Machine = little_endian(s[offset_NT+4:offset_NT+6])
         NumberOfSections = little_endian(s[offset_NT+6:offset_NT+8])
         SizeOfOptionalHeader = little_endian(s[offset_NT+20:offset_NT+22])
@@ -300,13 +300,26 @@ def info():
         Characteristics_three_in_SECTION_HEADER = little_endian(s[offset_SECTION_HEADER_three+36:offset_SECTION_HEADER_three+40])
 
 
-
+def chat():
+    global names
+    try:
+        while True:
+            try:
+                want = input('input what you want: ')
+                if want == 'exit':
+                    break
+                print(names[want])
+            except KeyError:
+                print('please ensure your input!')
+    except KeyboardInterrupt:
+        print('Bye Bye')
 
 def main():
     splitToSections()
     analysis_IAT()
     analysis_EAT()
     info()
+    chat()
 
 if __name__ == '__main__':
     main()
