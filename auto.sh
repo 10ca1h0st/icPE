@@ -12,7 +12,9 @@ fi
 /usr/bin/expect << EOF
 set timeout 20
 spawn git add .
+sleep 1
 spawn git commit -m"$commit"
+sleep 2
 spawn git push https://github.com/wujiaming123/${dir}.git master
 expect "'https://github.com':"
 send "wujiaming123\n"
